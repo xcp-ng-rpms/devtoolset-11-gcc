@@ -1,0 +1,171 @@
+From 0eec8b4e6cd2b309254a93626608aaa425aa6077 Mon Sep 17 00:00:00 2001
+From: "H.J. Lu" <hjl.tools@gmail.com>
+Date: Tue, 26 Oct 2021 15:46:59 -0700
+Subject: Add -fcf-check-attribute=[yes|no]
+
+-fcf-check-attribute=[yes|no] implies "cf_check" or "nocf_check" function
+attribute.
+
+diff --git a/gcc/attribs.c b/gcc/attribs.c
+index 47969bd77426..f3ebb6b5f166 100644
+--- a/gcc/attribs.c
++++ b/gcc/attribs.c
+@@ -541,6 +541,25 @@ decl_attributes (tree *node, tree attributes, int flags,
+ 	attributes = tree_cons (get_identifier ("no_icf"),  NULL, attributes);
+     }
+ 
++  /* -fcf-check-attribute=[yes|no] implies "cf_check" or "nocf_check"
++     function attribute.  */
++  if (TREE_CODE (*node) == FUNCTION_DECL
++      && flag_cf_check_attribute != CF_CHECK_ATTRIBUTE_NONE
++      && !fndecl_built_in_p (*node)
++      && lookup_attribute ("nocf_check",
++			   DECL_ATTRIBUTES (*node)) == nullptr
++      && lookup_attribute ("cf_check",
++			   DECL_ATTRIBUTES (*node)) == nullptr
++      && (!attributes
++	  || (lookup_attribute ("nocf_check", attributes) == nullptr
++	      && lookup_attribute ("cf_check", attributes) == nullptr)))
++    {
++      const char *attr = (flag_cf_check_attribute == CF_CHECK_ATTRIBUTE_YES
++			  ? "cf_check" : "nocf_check");
++      attributes = tree_cons (get_identifier (attr), nullptr,
++			      attributes);
++    }
++
+   targetm.insert_attributes (*node, &attributes);
+ 
+   /* Note that attributes on the same declaration are not necessarily
+diff --git a/gcc/c/c-decl.c b/gcc/c/c-decl.c
+index ddef9c68fb7e..ef7d8087e7b9 100644
+--- a/gcc/c/c-decl.c
++++ b/gcc/c/c-decl.c
+@@ -2130,7 +2130,27 @@ diagnose_mismatched_decls (tree newdecl, tree olddecl,
+ 		error ("conflicting type qualifiers for %q+D", newdecl);
+ 	    }
+ 	  else
+-	    error ("conflicting types for %q+D; have %qT", newdecl, newtype);
++	    {
++	      if (flag_cf_check_attribute == CF_CHECK_ATTRIBUTE_NO
++		  && (!lookup_attribute ("nocf_check",
++					  TYPE_ATTRIBUTES (oldtype))
++		       != !lookup_attribute ("nocf_check",
++					     TYPE_ATTRIBUTES (newtype))))
++		error ("conflicting types for %q+D; have %qT with "
++		       "implied %<nocf_check%> attribute",
++		       newdecl, newtype);
++	      else if (flag_cf_check_attribute == CF_CHECK_ATTRIBUTE_YES
++		       && (!lookup_attribute ("cf_check",
++					     TYPE_ATTRIBUTES (oldtype))
++			  != !lookup_attribute ("cf_check",
++						TYPE_ATTRIBUTES (newtype))))
++		error ("conflicting types for %q+D; have %qT with "
++		       "implied %<cf_check%> attribute",
++		       newdecl, newtype);
++	      else
++		error ("conflicting types for %q+D; have %qT",
++		       newdecl, newtype);
++	    }
+ 	  diagnose_arglist_conflict (newdecl, olddecl, newtype, oldtype);
+ 	  locate_old_decl (olddecl);
+ 	  return false;
+diff --git a/gcc/common.opt b/gcc/common.opt
+index a75b44ee47e7..e77c539354aa 100644
+--- a/gcc/common.opt
++++ b/gcc/common.opt
+@@ -1805,6 +1805,22 @@ Enum(cf_protection_level) String(check) Value(CF_CHECK)
+ EnumValue
+ Enum(cf_protection_level) String(none) Value(CF_NONE)
+ 
++fcf-check-attribute=
++Target RejectNegative Joined Enum(cf_check_attribute) Var(flag_cf_check_attribute) Init(CF_CHECK_ATTRIBUTE_NONE)
++-fcf-check-attribute=[none|yes|no] Select the default cf_check attribute.
++
++Enum
++Name(cf_check_attribute) Type(enum cf_check_attribute) UnknownError(unknown default Control-Flow attribute %qs)
++
++EnumValue
++Enum(cf_check_attribute) String(none) Value(CF_CHECK_ATTRIBUTE_NONE)
++
++EnumValue
++Enum(cf_check_attribute) String(yes) Value(CF_CHECK_ATTRIBUTE_YES)
++
++EnumValue
++Enum(cf_check_attribute) String(no) Value(CF_CHECK_ATTRIBUTE_NO)
++
+ finstrument-functions
+ Common Var(flag_instrument_function_entry_exit)
+ Instrument function entry and exit with profiling calls.
+diff --git a/gcc/flag-types.h b/gcc/flag-types.h
+index a038c8fb738f..dabd7832754d 100644
+--- a/gcc/flag-types.h
++++ b/gcc/flag-types.h
+@@ -397,6 +397,14 @@ enum cf_protection_level
+   CF_CHECK = 1 << 3
+ };
+ 
++/* Default Control-Flow Protection attribute.  */
++enum cf_check_attribute
++{
++  CF_CHECK_ATTRIBUTE_NONE = 0,
++  CF_CHECK_ATTRIBUTE_YES,
++  CF_CHECK_ATTRIBUTE_NO
++};
++
+ /* Parloops schedule type.  */
+ enum parloops_schedule_type
+ {
+diff --git a/gcc/testsuite/gcc.target/i386/pr102953-1.c b/gcc/testsuite/gcc.target/i386/pr102953-1.c
+new file mode 100644
+index 000000000000..fd92c9c577ea
+--- /dev/null
++++ b/gcc/testsuite/gcc.target/i386/pr102953-1.c
+@@ -0,0 +1,8 @@
++/* { dg-do compile } */
++/* { dg-options "-Wall -fcf-protection -mmanual-endbr -fcf-check-attribute=no" } */
++
++static void __attribute__((cf_check)) foo(void);
++static void foo(void) /* { dg-error "implied 'nocf_check' attribute" } */
++{
++}
++void (*ptr)(void) = foo; /* { dg-warning "incompatible pointer type" } */
+diff --git a/gcc/testsuite/gcc.target/i386/pr102953-2.c b/gcc/testsuite/gcc.target/i386/pr102953-2.c
+new file mode 100644
+index 000000000000..cd8f42791807
+--- /dev/null
++++ b/gcc/testsuite/gcc.target/i386/pr102953-2.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-Wall -fcf-protection -mmanual-endbr -fcf-check-attribute=no" } */
++
++static void foo(void)
++{
++}
++void (*ptr)(void) = foo; /* { dg-warning "incompatible pointer type" } */
+diff --git a/gcc/testsuite/gcc.target/i386/pr102953-3.c b/gcc/testsuite/gcc.target/i386/pr102953-3.c
+new file mode 100644
+index 000000000000..b1bd4afe85fd
+--- /dev/null
++++ b/gcc/testsuite/gcc.target/i386/pr102953-3.c
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-Wall -fcf-protection -mmanual-endbr -fcf-check-attribute=no" } */
++
++extern void foo(void);
++void __attribute__((cf_check)) foo(void) /* { dg-error "implied 'nocf_check' attribute" } */
++{
++}
+diff --git a/gcc/testsuite/gcc.target/i386/pr102953-4.c b/gcc/testsuite/gcc.target/i386/pr102953-4.c
+new file mode 100644
+index 000000000000..ee0c66f94cb5
+--- /dev/null
++++ b/gcc/testsuite/gcc.target/i386/pr102953-4.c
+@@ -0,0 +1,8 @@
++/* { dg-do compile } */
++/* { dg-options "-Wall -fcf-protection -mmanual-endbr -fcf-check-attribute=no" } */
++
++static int __attribute__((cf_check)) foo(char a[], int b)
++{
++  return 0;
++}
++int (*ptr)(char[], int) = foo;

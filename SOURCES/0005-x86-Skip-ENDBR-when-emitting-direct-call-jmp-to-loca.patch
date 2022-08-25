@@ -1,0 +1,58 @@
+From 38ee8e151cefeda5d5b52a46bd64495a1bc7d0b3 Mon Sep 17 00:00:00 2001
+From: "H.J. Lu" <hjl.tools@gmail.com>
+Date: Tue, 26 Oct 2021 14:29:31 -0700
+Subject: x86: Skip ENDBR when emitting direct call/jmp to local function
+
+Skip ENDBR when emitting a direct call/jmp to a local function with ENDBR
+at function entry.
+
+diff --git a/gcc/config/i386/i386-features.c b/gcc/config/i386/i386-features.c
+index 77783a154b68..0570c03672c8 100644
+--- a/gcc/config/i386/i386-features.c
++++ b/gcc/config/i386/i386-features.c
+@@ -1989,6 +1989,8 @@ rest_of_insert_endbr_and_patchable_area (bool need_endbr,
+ 	      || (TARGET_DLLIMPORT_DECL_ATTRIBUTES
+ 		  && DECL_DLLIMPORT_P (cfun->decl))))
+ 	{
++	  rtx symbol = XEXP (DECL_RTL (cfun->decl), 0);
++	  SYMBOL_REF_FLAGS (symbol) |= SYMBOL_FLAG_FUNCTION_ENDBR;
+ 	  if (crtl->profile && flag_fentry)
+ 	    {
+ 	      /* Queue ENDBR insertion to x86_function_profiler.
+diff --git a/gcc/config/i386/i386.c b/gcc/config/i386/i386.c
+index efb3ecd08d70..ff4fe1e7782f 100644
+--- a/gcc/config/i386/i386.c
++++ b/gcc/config/i386/i386.c
+@@ -13554,7 +13554,15 @@ ix86_print_operand (FILE *file, rtx x, int code)
+       else if (flag_pic || MACHOPIC_INDIRECT)
+ 	output_pic_addr_const (file, x, code);
+       else
+-	output_addr_const (file, x);
++	{
++	  /* Skip ENDBR when emitting a direct call/jmp to a local
++	     function with ENDBR at function entry.  */
++	  if (code == 'P'
++	      && GET_CODE (x) == SYMBOL_REF
++	      && SYMBOL_FLAG_FUNCTION_ENDBR_P (x))
++	    x = gen_rtx_PLUS (Pmode, x, GEN_INT (4));
++	  output_addr_const (file, x);
++	}
+     }
+ }
+ 
+diff --git a/gcc/config/i386/i386.h b/gcc/config/i386/i386.h
+index 6fc1bf350d58..92c63e38747e 100644
+--- a/gcc/config/i386/i386.h
++++ b/gcc/config/i386/i386.h
+@@ -3028,6 +3028,11 @@ extern GTY(()) tree ms_va_list_type_node;
+ #define SYMBOL_REF_STUBVAR_P(X) \
+ 	((SYMBOL_REF_FLAGS (X) & SYMBOL_FLAG_STUBVAR) != 0)
+ 
++/* Flag to mark a function with ENDBR at entry.  */
++#define SYMBOL_FLAG_FUNCTION_ENDBR	(SYMBOL_FLAG_MACH_DEP << 5)
++#define SYMBOL_FLAG_FUNCTION_ENDBR_P(X) \
++	((SYMBOL_REF_FLAGS (X) & SYMBOL_FLAG_FUNCTION_ENDBR) != 0)
++
+ extern void debug_ready_dispatch (void);
+ extern void debug_dispatch_window (int);
+ 

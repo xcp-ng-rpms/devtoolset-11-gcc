@@ -1,0 +1,135 @@
+From f4972ec0475ce284a0315792a1072dd885bb203a Mon Sep 17 00:00:00 2001
+From: "H.J. Lu" <hjl.tools@gmail.com>
+Date: Wed, 27 Oct 2021 06:27:15 -0700
+Subject: x86: Add -mindirect-branch-cs-prefix
+
+Add -mindirect-branch-cs-prefix to add CS prefix to call and jmp to
+indirect thunk with branch target in r8-r15 registers so that the call
+and jmp instruction length is 6 bytes to allow them to be replaced with
+"lfence; call *%r8-r15" or "lfence; jmp *%r8-r15" at run-time.
+
+gcc/
+
+	PR target/102952
+	* config/i386/i386.c (ix86_output_jmp_thunk_or_indirect): Emit
+	CS prefix for -mindirect-branch-cs-prefix.
+	(ix86_output_indirect_branch_via_reg): Likewise.
+	* config/i386/i386.opt: Add -mindirect-branch-cs-prefix.
+	* doc/invoke.texi: Document -mindirect-branch-cs-prefix.
+
+gcc/testsuite/
+
+	PR target/102952
+	* gcc.target/i386/indirect-thunk-cs-prefix-1.c: New test.
+	* gcc.target/i386/indirect-thunk-cs-prefix-2.c: Likewise.
+
+(cherry picked from commit 2196a681d7810ad8b227bf983f38ba716620545e)
+
+diff --git a/gcc/config/i386/i386.c b/gcc/config/i386/i386.c
+index e2469286718f..be9e535616f5 100644
+--- a/gcc/config/i386/i386.c
++++ b/gcc/config/i386/i386.c
+@@ -15733,6 +15733,9 @@ ix86_output_jmp_thunk_or_indirect (const char *thunk_name, const int regno)
+ {
+   if (thunk_name != NULL)
+     {
++      if (REX_INT_REGNO_P (regno)
++	  && ix86_indirect_branch_cs_prefix)
++	fprintf (asm_out_file, "\tcs\n");
+       fprintf (asm_out_file, "\tjmp\t");
+       assemble_name (asm_out_file, thunk_name);
+       putc ('\n', asm_out_file);
+@@ -15786,6 +15789,9 @@ ix86_output_indirect_branch_via_reg (rtx call_op, bool sibcall_p)
+     {
+       if (thunk_name != NULL)
+ 	{
++	  if (REX_INT_REGNO_P (regno)
++	      && ix86_indirect_branch_cs_prefix)
++	    fprintf (asm_out_file, "\tcs\n");
+ 	  fprintf (asm_out_file, "\tcall\t");
+ 	  assemble_name (asm_out_file, thunk_name);
+ 	  putc ('\n', asm_out_file);
+diff --git a/gcc/config/i386/i386.opt b/gcc/config/i386/i386.opt
+index bc401c197b58..46010c2cc1dc 100644
+--- a/gcc/config/i386/i386.opt
++++ b/gcc/config/i386/i386.opt
+@@ -1072,6 +1072,10 @@ Enum(indirect_branch) String(thunk-inline) Value(indirect_branch_thunk_inline)
+ EnumValue
+ Enum(indirect_branch) String(thunk-extern) Value(indirect_branch_thunk_extern)
+ 
++mindirect-branch-cs-prefix
++Target Var(ix86_indirect_branch_cs_prefix) Init(0)
++Add CS prefix to call and jmp to indirect thunk with branch target in r8-r15 registers.
++
+ mindirect-branch-register
+ Target Var(ix86_indirect_branch_register) Init(0)
+ Force indirect call and jump via register.
+diff --git a/gcc/doc/invoke.texi b/gcc/doc/invoke.texi
+index 1fe19800bde9..645189c2227b 100644
+--- a/gcc/doc/invoke.texi
++++ b/gcc/doc/invoke.texi
+@@ -1409,7 +1409,8 @@ See RS/6000 and PowerPC Options.
+ -mstack-protector-guard-symbol=@var{symbol} @gol
+ -mgeneral-regs-only  -mcall-ms2sysv-xlogues @gol
+ -mindirect-branch=@var{choice}  -mfunction-return=@var{choice} @gol
+--mindirect-branch-register -mharden-sls=@var{choice} -mneeded}
++-mindirect-branch-register -mharden-sls=@var{choice} @gol
++-mindirect-branch-cs-prefix -mneeded}
+ 
+ @emph{x86 Windows Options}
+ @gccoptlist{-mconsole  -mcygwin  -mno-cygwin  -mdll @gol
+@@ -31732,6 +31733,13 @@ hardening.  @samp{return} enables SLS hardening for function return.
+ @samp{indirect-branch} enables SLS hardening for indirect branch.
+ @samp{all} enables all SLS hardening.
+ 
++@item -mindirect-branch-cs-prefix
++@opindex mindirect-branch-cs-prefix
++Add CS prefix to call and jmp to indirect thunk with branch target in
++r8-r15 registers so that the call and jmp instruction length is 6 bytes
++to allow them to be replaced with @samp{lfence; call *%r8-r15} or
++@samp{lfence; jmp *%r8-r15} at run-time.
++
+ @end table
+ 
+ These @samp{-m} switches are supported in addition to the above
+diff --git a/gcc/testsuite/gcc.target/i386/indirect-thunk-cs-prefix-1.c b/gcc/testsuite/gcc.target/i386/indirect-thunk-cs-prefix-1.c
+new file mode 100644
+index 000000000000..db2f3416823c
+--- /dev/null
++++ b/gcc/testsuite/gcc.target/i386/indirect-thunk-cs-prefix-1.c
+@@ -0,0 +1,14 @@
++/* { dg-do compile { target { ! ia32 } } } */
++/* { dg-options "-O2 -ffixed-rax -ffixed-rbx -ffixed-rcx -ffixed-rdx -ffixed-rdi -ffixed-rsi -mindirect-branch-cs-prefix -mindirect-branch=thunk-extern" } */
++/* { dg-additional-options "-fno-pic" { target { ! *-*-darwin* } } } */
++
++extern void (*fptr) (void);
++
++void
++foo (void)
++{
++  fptr ();
++}
++
++/* { dg-final { scan-assembler-times "jmp\[ \t\]+_?__x86_indirect_thunk_r\[0-9\]+" 1 } } */
++/* { dg-final { scan-assembler-times "\tcs" 1 } } */
+diff --git a/gcc/testsuite/gcc.target/i386/indirect-thunk-cs-prefix-2.c b/gcc/testsuite/gcc.target/i386/indirect-thunk-cs-prefix-2.c
+new file mode 100644
+index 000000000000..adfc39a49d41
+--- /dev/null
++++ b/gcc/testsuite/gcc.target/i386/indirect-thunk-cs-prefix-2.c
+@@ -0,0 +1,15 @@
++/* { dg-do compile { target { ! ia32 } } } */
++/* { dg-options "-O2 -ffixed-rax -ffixed-rbx -ffixed-rcx -ffixed-rdx -ffixed-rdi -ffixed-rsi -mindirect-branch-cs-prefix -mindirect-branch=thunk-extern" } */
++/* { dg-additional-options "-fno-pic" { target { ! *-*-darwin* } } } */
++
++extern void (*bar) (void);
++
++int
++foo (void)
++{
++  bar ();
++  return 0;
++}
++
++/* { dg-final { scan-assembler-times "call\[ \t\]+_?__x86_indirect_thunk_r\[0-9\]+" 1 } } */
++/* { dg-final { scan-assembler-times "\tcs" 1 } } */
