@@ -684,7 +684,7 @@ BuildRequires: devtoolset-11-gdb >= 7.4.50
 # -static is used several times.
 BuildRequires: glibc-static
 BuildRequires: zlib-devel, gettext, dejagnu, bison, flex, sharutils
-BuildRequires: texinfo, texinfo-tex, /usr/bin/pod2man
+BuildRequires: texinfo, /usr/bin/pod2man
 #BuildRequires: systemtap-sdt-devel >= 1.3
 #BuildRequires: gmp-devel >= 4.1.2-8, mpfr-devel >= 3.1.0, libmpc-devel >= 0.8.1
 #BuildRequires: python3-devel, /usr/bin/python
