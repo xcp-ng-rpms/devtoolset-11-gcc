@@ -1,0 +1,63 @@
+------------------------------------------------------------------------------------------
+Issue: https://issues.citrite.net/browse/CP-42316 - import etcd into rt-next
+
+Pull Request: https://code.citrite.net/projects/XSS/repos/gcc.spec/pull-requests/8/overview
+
+Purpose:
+Fixes bootstrapping golang 1.16+ using gccgo: https://github.com/golang/go/issues/47771
+
+Verification of the fix:
+wget https://go.dev/dl/go1.17.13.src.tar.gz
+tar xf go1.17.13.src.tar.gz
+mv go go1.17.13
+cd    go1.17.13/src
+go mod vendor
+GOROOT_BOOTSTRAP=/local/scratch/.../prefix (--prefix of the gcc-go build) ./make.bash
+
+Upstream Link:
+https://github.com/golang/gofrontend/commit/21b30eddc59d92a07264c3b21eb032d6c303d16f
+
+Upstream versions with this fix:
+- gcc-11.3.0
+- maybe a newer build of gcc-11.2.3-xxxxxxx from CentOS7.
+
+Raw patch download URL:
+https://github.com/golang/gofrontend/commit/21b30eddc59d92a07264c3b21eb032d6c303d16f.patch
+
+Manual changes:
+- Had to change the file path to gcc/go/gofrontend/expressions.cc
+------------------------------------------------------------------------------------------
+
+From 21b30eddc59d92a07264c3b21eb032d6c303d16f Mon Sep 17 00:00:00 2001
+From: Ian Lance Taylor <iant@golang.org>
+Date: Sat, 21 Aug 2021 12:42:19 -0700
+Subject: [PATCH] compiler: correct condition for calling memclrHasPointers
+
+When compiling append(s, make([]typ, ln)...), where typ has a pointer,
+and the append fits within the existing capacity of s, the condition
+used to clear out the new elements was reversed.
+
+Fixes golang/go#47771
+
+Change-Id: Ia880adc08ab723afe3f927e65c9e081f9f717f90
+Reviewed-on: https://go-review.googlesource.com/c/gofrontend/+/344189
+Trust: Ian Lance Taylor <iant@golang.org>
+Reviewed-by: Than McIntosh <thanm@google.com>
+Reviewed-by: Cherry Mui <cherryyz@google.com>
+---
+ go/expressions.cc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/go/expressions.cc b/go/expressions.cc
+index 8d4d168f4..ddb1d91f3 100644
+--- a/gcc/go/gofrontend/expressions.cc
++++ b/gcc/go/gofrontend/expressions.cc
+@@ -9350,7 +9350,7 @@ Builtin_call_expression::flatten_append(Gogo* gogo, Named_object* function,
+               ref2 = Expression::make_cast(uint_type, ref2, loc);
+               cond = Expression::make_binary(OPERATOR_GT, ref, ref2, loc);
+               zero = Expression::make_integer_ul(0, int_type, loc);
+-              call = Expression::make_conditional(cond, call, zero, loc);
++              call = Expression::make_conditional(cond, zero, call, loc);
+             }
+         }
+       else
