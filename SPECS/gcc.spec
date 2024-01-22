@@ -1,6 +1,6 @@
-%global package_speccommit 86d00a7660a53d9389c53b3355edf79776c68b28
+%global package_speccommit e17dc15d8a771944131cde083343193b190006b7
 %global usver 11.2.1
-%global xsver 5
+%global xsver 6
 %global xsrel %{xsver}%{?xscount}%{?xshash}
 
 #--- begin macros.scl.inc
@@ -492,7 +492,7 @@ popd
 %if 0%{?rhel} > 7
 %global build_ada 0
 %global build_objc 0
-%global build_go 0
+%global build_go 1
 %global build_d 0
 %else
 %ifarch %{ix86} x86_64 ia64 ppc %{power64} alpha s390x %{arm} aarch64
@@ -502,7 +502,7 @@ popd
 %endif
 %global build_objc 0
 %ifarch %{ix86} x86_64 ppc ppc64 ppc64le ppc64p7 s390 s390x %{arm} aarch64 %{mips}
-%global build_go 0
+%global build_go 1
 %else
 %global build_go 0
 %endif
@@ -641,6 +641,7 @@ Patch25: 0003-x86-Add-mindirect-branch-cs-prefix.patch
 Patch26: 0004-x86-Rename-harden-sls-indirect-branch-to-harden-sls-.patch
 Patch27: 0005-x86-Skip-ENDBR-when-emitting-direct-call-jmp-to-loca.patch
 Patch28: 0006-Add-fcf-check-attribute-yes-no.patch
+Patch29: 21b30eddc59d92a07264c3b21eb032d6c303d16f.patch
 # The source for nvptx-tools package was pulled from upstream's vcs.  Use the
 # following commands to generate the tarball:
 # git clone --depth 1 git://github.com/MentorEmbedded/nvptx-tools.git nvptx-tools-dir.tmp
@@ -909,6 +910,15 @@ Autoreq: true
 Manual, doxygen generated API information and Frequently Asked Questions
 for the GNU standard C++ library.
 
+%package go
+Summary: Go support for GCC 11 (gccgo)
+Requires: devtoolset-11-gcc%{!?scl:11} = %{version}-%{release}
+Autoreq: true
+
+%description go
+The devtoolset-11-gcc%{!?scl:10}-go package provides support for compiling Go
+programs with the GNU Compiler Collection.
+
 %package gfortran
 Summary: Fortran support for GCC 11
 Requires: devtoolset-11-gcc%{!?scl:11} = %{version}-%{release}
@@ -917,7 +927,8 @@ Requires: libgfortran >= 8.1.1
 %else
 Requires: libgfortran5 >= 8.1.1
 %endif
-%if %{build_libquadmath}
+# xenpkg clone gcc needs this when used in a fedora37 distrobox:
+%if 0%{!?build_libquadmath:1}
 %if 0%{!?scl:1}
 Requires: libquadmath
 %endif
@@ -1494,12 +1505,15 @@ CONFIGURE_OPTS="\
 %endif
     "
 
+%if %{build_go}
+enablelgo=,go
+%endif
 CC="$CC" CXX="$CXX" CFLAGS="$OPT_FLAGS" \
     CXXFLAGS="`echo " $OPT_FLAGS " | sed 's/ -Wall / /g;s/ -fexceptions / /g' \
           | sed 's/ -Wformat-security / -Wformat -Wformat-security /'`" \
     XCFLAGS="$OPT_FLAGS" TCFLAGS="$OPT_FLAGS" \
     ../configure --enable-bootstrap \
-    --enable-languages=c,c++,fortran,lto \
+    --enable-languages=c,c++,fortran${enablelgo},lto \
     $CONFIGURE_OPTS
 
 %ifarch sparc sparcv9 sparc64
@@ -1582,7 +1596,7 @@ done)
 (cd libgfortran; for i in ChangeLog*; do
     cp -p $i ../rpm.doc/gfortran/$i.libgfortran
 done)
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 (cd libquadmath; for i in ChangeLog* COPYING.LIB; do
     cp -p $i ../rpm.doc/libquadmath/$i.libquadmath
 done)
@@ -1930,7 +1944,7 @@ echo '/* GNU ld script
    the static library, so try that secondarily.  */
 %{oformat}
 INPUT ( %{?scl:%{_root_prefix}}%{!?scl:%{_prefix}}/%{_lib}/libgfortran.so.5 -lgfortran_nonshared )' > libgfortran.so
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 rm -f libquadmath.so
 echo '/* GNU ld script */
 %{oformat}
@@ -1985,7 +1999,7 @@ mv -f %{buildroot}%{_prefix}/%{_lib}/libstdc++fs.*a $FULLLPATH/
 mv -f %{buildroot}%{_prefix}/%{_lib}/libsupc++.*a .
 mv -f %{buildroot}%{_prefix}/%{_lib}/libgfortran.*a .
 mv -f %{buildroot}%{_prefix}/%{_lib}/libgomp.*a .
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 mv -f %{buildroot}%{_prefix}/%{_lib}/libquadmath.*a $FULLLPATH/
 %endif
 %if %{build_libitm}
@@ -2036,7 +2050,7 @@ INPUT ( %{?scl:%{_root_prefix}}%{!?scl:%{_prefix}}/lib64/libgomp.so.1 )' > 64/li
 echo '/* GNU ld script */
 %{oformat2}
 INPUT ( %{_prefix}/lib64/libgccjit.so.0 )' > 64/libgccjit.so
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 rm -f 64/libquadmath.so
 echo '/* GNU ld script */
 %{oformat2}
@@ -2077,7 +2091,7 @@ INPUT ( %{?scl:%{_root_prefix}}%{!?scl:%{_prefix}}/lib64/libubsan.so.1 )' > 64/l
 mv -f %{buildroot}%{_prefix}/lib64/libsupc++.*a 64/
 mv -f %{buildroot}%{_prefix}/lib64/libgfortran.*a 64/
 mv -f %{buildroot}%{_prefix}/lib64/libgomp.*a 64/
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 mv -f %{buildroot}%{_prefix}/lib64/libquadmath.*a 64/
 %endif
 ln -sf lib32/libstdc++.a libstdc++.a
@@ -2086,7 +2100,7 @@ ln -sf lib32/libstdc++fs.a libstdc++fs.a
 ln -sf ../lib64/libstdc++fs.a 64/libstdc++fs.a
 ln -sf lib32/libstdc++_nonshared.a libstdc++_nonshared.a
 ln -sf ../lib64/libstdc++_nonshared.a 64/libstdc++_nonshared.a
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 ln -sf lib32/libquadmath.a libquadmath.a
 ln -sf ../lib64/libquadmath.a 64/libquadmath.a
 %endif
@@ -2147,7 +2161,7 @@ INPUT ( %{?scl:%{_root_prefix}}%{!?scl:%{_prefix}}/lib/libgomp.so.1 )' > 32/libg
 echo '/* GNU ld script */
 %{oformat2}
 INPUT ( %{_prefix}/lib/libgccjit.so.0 )' > 32/libgccjit.so
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 rm -f 32/libquadmath.so
 echo '/* GNU ld script */
 %{oformat2}
@@ -2188,7 +2202,7 @@ INPUT ( %{?scl:%{_root_prefix}}%{!?scl:%{_prefix}}/lib/libubsan.so.1 )' > 32/lib
 mv -f %{buildroot}%{_prefix}/lib/libsupc++.*a 32/
 mv -f %{buildroot}%{_prefix}/lib/libgfortran.*a 32/
 mv -f %{buildroot}%{_prefix}/lib/libgomp.*a 32/
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 mv -f %{buildroot}%{_prefix}/lib/libquadmath.*a 32/
 %endif
 %endif
@@ -2207,7 +2221,7 @@ ln -sf ../lib32/libgfortran_nonshared.a 32/libgfortran_nonshared.a
 ln -sf lib64/libgfortran_nonshared.a libgfortran_nonshared.a
 ln -sf lib64/libgomp_nonshared.a libgomp_nonshared.a
 %endif
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 ln -sf ../lib32/libquadmath.a 32/libquadmath.a
 ln -sf lib64/libquadmath.a libquadmath.a
 %endif
@@ -2240,7 +2254,7 @@ ln -sf ../../../%{multilib_32_arch}-%{_vendor}-%{_target_os}%{?_gnu}/%{gcc_major
 %if 0%{?rhel} <= 8
 ln -sf ../../../%{multilib_32_arch}-%{_vendor}-%{_target_os}%{?_gnu}/%{gcc_major}/libgfortran_nonshared.a 32/libgfortran_nonshared.a
 %endif
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 ln -sf ../../../%{multilib_32_arch}-%{_vendor}-%{_target_os}%{?_gnu}/%{gcc_major}/libquadmath.a 32/libquadmath.a
 %endif
 %if %{build_libitm}
@@ -2298,7 +2312,7 @@ popd
 chmod 755 %{buildroot}%{_prefix}/%{_lib}/libgfortran.so.5.*
 chmod 755 %{buildroot}%{_prefix}/%{_lib}/libgomp.so.1.*
 chmod 755 %{buildroot}%{_prefix}/%{_lib}/libcc1.so.0.*
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 %if 0%{!?scl:1}
 chmod 755 %{buildroot}%{_prefix}/%{_lib}/libquadmath.so.0.*
 %endif
@@ -2837,7 +2851,7 @@ fi
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/libsanitizer.spec
 %endif
 %ifarch sparcv9 sparc64 ppc ppc64
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/libquadmath.a
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/libquadmath.so
 %endif
@@ -2855,7 +2869,7 @@ fi
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/64/libgomp.a
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/64/libgomp.so
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/64/libgccjit.so
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/64/libquadmath.a
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/64/libquadmath.so
 %endif
@@ -2903,7 +2917,7 @@ fi
 %endif
 
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/32/libgccjit.so
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/32/libquadmath.a
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/32/libquadmath.so
 %endif
@@ -2926,7 +2940,7 @@ fi
 %endif
 %endif
 %ifarch sparcv9 sparc64 ppc ppc64 ppc64p7
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/libquadmath.a
 %{_prefix}/lib/gcc/%{gcc_target_platform}/%{gcc_major}/libquadmath.so
 %endif
@@ -3042,6 +3056,23 @@ fi
 %doc rpm.doc/libstdc++-v3/html
 %endif
 
+%if %{build_go}
+%files go
+%{_prefix}/bin/*gccgo
+%{_prefix}/bin/*go
+%{_prefix}/bin/*gofmt
+%{_prefix}/lib64/libgo*
+%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/buildid
+%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/cgo
+%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/go1
+%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/test2json
+%{_prefix}/libexec/gcc/%{gcc_target_platform}/%{gcc_major}/vet
+%dir %{_prefix}/lib64/go
+%dir %{_prefix}/lib64/go/%{gcc_major}
+%dir %{_prefix}/lib64/go/%{gcc_major}/%{gcc_target_platform}
+%{_prefix}/lib64/go/%{gcc_major}/%{gcc_target_platform}/*
+%endif
+
 %files gfortran
 %{_prefix}/bin/gfortran%{!?scl:11}
 %if 0%{?scl:1}
@@ -3097,7 +3128,7 @@ fi
 %endif
 %doc rpm.doc/gfortran/*
 
-%if %{build_libquadmath}
+%if 0%{!?build_libquadmath:1}
 %files -n devtoolset-11-libquadmath-devel
 %dir %{_prefix}/lib/gcc
 %dir %{_prefix}/lib/gcc/%{gcc_target_platform}
@@ -3304,6 +3335,9 @@ fi
  %endif
 
 %changelog
+* Thu Mar  2 2023 Bernhard Kaindl <bernhard.kaindl@citrix.com> - 11.2.1-6
+- CP-42316: Add and enable building the devtoolset-11-gcc-go package
+
 * Wed Apr 13 2022 Andrew Cooper <andrew.cooper3@citrix.com> - 11.2.1-5
 - Backport SLS/defunelling/IBT patches
 
